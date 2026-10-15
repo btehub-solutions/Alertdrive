@@ -1,7 +1,8 @@
-fastapi
-uvicorn
-tensorflow-cpu>=2.12.0
-numpy
-Pillow
-huggingface_hub
-python-multipart
+fastapi>=0.100.0
+uvicorn>=0.22.0
+python-multipart>=0.0.6
+Pillow>=10.0.0
+numpy<2.0.0
+tflite-runtime>=2.14.0; sys_platform != "win32"
+tensorflow-cpu>=2.13.0; sys_platform == "win32"
+huggingface_hub>=0.19.0

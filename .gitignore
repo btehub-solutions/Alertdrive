@@ -20,3 +20,10 @@ FairFace_extracted/
 
 # OS files
 .DS_Store
+
+# Frontend build and dependencies
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env*.local
+frontend/*.tsbuildinfo
