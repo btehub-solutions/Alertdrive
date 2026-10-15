@@ -76,7 +76,10 @@ def serve_client_dashboard():
     raise HTTPException(status_code=404, detail="Client dashboard not found.")
 
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
+async def predict(
+    file: UploadFile = File(...),
+    invert: bool = False
+):
     try:
         # Validate uploaded content type
         if file.content_type and not file.content_type.startswith("image/"):
@@ -101,19 +104,25 @@ async def predict(file: UploadFile = File(...)):
 
         probability = float(output_data[0][0])
 
-        # Classification Logic (0 = DROWSY, 1 = NATURAL / Alert)
-        if probability > 0.5:
-            status = "NATURAL"
-            confidence = probability * 100.0
+        # Dual interpretation handling
+        # Standard: 0 = Natural / Alert, 1 = Drowsy
+        # Inverted: 0 = Drowsy, 1 = Natural / Alert
+        if invert:
+            is_drowsy = probability <= 0.5
+            confidence = (1.0 - probability) * 100.0 if is_drowsy else probability * 100.0
         else:
-            status = "DROWSY"
-            confidence = (1.0 - probability) * 100.0
+            is_drowsy = probability > 0.5
+            confidence = probability * 100.0 if is_drowsy else (1.0 - probability) * 100.0
+
+        status = "DROWSY" if is_drowsy else "NATURAL"
 
         return {
             "success": True,
             "status": status,
             "confidence_percentage": round(confidence, 2),
-            "raw_score": probability
+            "raw_score": probability,
+            "p_drowsy": round(probability * 100.0, 2),
+            "p_natural": round((1.0 - probability) * 100.0, 2)
         }
     except HTTPException:
         raise
