@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlertDrive AI - Client-Side DMS</title>
+
+    <!-- Load MediaPipe Face Mesh CDN Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0f0f11;
+            color: #f1f1f1;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            max-width: 900px;
+            width: 100%;
+            background: #18181c;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            text-align: center;
+        }
+        h1 {
+            color: #4CAF50;
+            margin-bottom: 5px;
+        }
+        .subtitle {
+            color: #8a8a93;
+            margin-top: 0;
+            margin-bottom: 25px;
+        }
+        #video-container {
+            position: relative;
+            width: 640px;
+            height: 480px;
+            margin: 0 auto;
+            border: 4px solid #4CAF50;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #000;
+        }
+        video, canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        #video {
+            transform: scaleX(-1); /* Mirror camera feed */
+        }
+        .metrics-panel {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-top: 25px;
+        }
+        .metric-card {
+            background: #22222a;
+            padding: 15px;
+            border-radius: 8px;
+            border-bottom: 3px solid #4CAF50;
+        }
+        .metric-card.warn {
+            border-bottom: 3px solid #ff9800;
+        }
+        .metric-card.danger {
+            border-bottom: 3px solid #f44336;
+        }
+        .metric-title {
+            font-size: 12px;
+            color: #8a8a93;
+            text-transform: uppercase;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+        #status-banner {
+            margin-top: 25px;
+            padding: 15px;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 8px;
+            background-color: #2e7d32;
+            color: white;
+            transition: all 0.3s ease;
+        }
+        #status-banner.drowsy {
+            background-color: #c62828;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🚗 AlertDrive AI</h1>
+    <p class="subtitle">Client-Side Edge Facial Telemetry DMS (No Server Processing Required)</p>
+
+    <div id="video-container">
+        <video id="video" playsinline></video>
+        <canvas id="canvas" width="640" height="480"></canvas>
+    </div>
+
+    <div id="status-banner">STATUS: DRIVER ALERT</div>
+
+    <div class="metrics-panel">
+        <div class="metric-card" id="ear-card">
+            <div class="metric-title">Eye Aspect Ratio (EAR)</div>
+            <div class="metric-value" id="ear-val">0.00</div>
+        </div>
+        <div class="metric-card" id="mar-card">
+            <div class="metric-title">Mouth Aspect Ratio (MAR)</div>
+            <div class="metric-value" id="mar-val">0.00</div>
+        </div>
+        <div class="metric-card" id="pitch-card">
+            <div class="metric-title">Head Pitch (Nodding)</div>
+            <div class="metric-value" id="pitch-val">0.0°</div>
+        </div>
+        <div class="metric-card" id="yaw-card">
+            <div class="metric-title">Head Yaw (Attention)</div>
+            <div class="metric-value" id="yaw-val">0.0°</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const statusBanner = document.getElementById('status-banner');
+
+    // Metrics UI hooks
+    const earVal = document.getElementById('ear-val');
+    const marVal = document.getElementById('mar-val');
+    const pitchVal = document.getElementById('pitch-val');
+    const yawVal = document.getElementById('yaw-val');
+    const container = document.getElementById('video-container');
+
+    // Audio warning buzzer system via Web Audio API
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let lastSoundTime = 0;
+
+    function triggerAlertSound() {
+        const now = Date.now();
+        if (now - lastSoundTime > 300) {
+            lastSoundTime = now;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.25);
+        }
+    }
+
+    // Landmark index lists mapping
+    const L_EYE = [362, 385, 387, 263, 373, 380];
+    const R_EYE = [33, 160, 158, 133, 153, 144];
+    const MOUTH = [78, 81, 13, 311, 308, 402, 14, 178];
+
+    function calculateDistance(p1, p2) {
+        return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2) + Math.pow(p1.z - p2.z, 2));
+    }
+
+    function getEAR(landmarks, indices) {
+        const v1 = calculateDistance(landmarks[indices[1]], landmarks[indices[5]]);
+        const v2 = calculateDistance(landmarks[indices[2]], landmarks[indices[4]]);
+        const h = calculateDistance(landmarks[indices[0]], landmarks[indices[3]]);
+        return h > 0 ? (v1 + v2) / (2 * h) : 0;
+    }
+
+    function getMAR(landmarks, indices) {
+        const v = calculateDistance(landmarks[indices[2]], landmarks[indices[6]]);
+        const h = calculateDistance(landmarks[indices[0]], landmarks[indices[4]]);
+        return h > 0 ? v / h : 0;
+    }
+
+    function estimateOrientation(landmarks) {
+        // Approximation using landmarks anchors
+        const nose = landmarks[1];
+        const chin = landmarks[152];
+        const leftEye = landmarks[33];
+        const rightEye = landmarks[263];
+
+        const eyeDist = calculateDistance(leftEye, rightEye);
+        const pitch = (nose.y - (leftEye.y + rightEye.y)/2) / eyeDist * 100;
+        const yaw = (nose.x - (leftEye.x + rightEye.x)/2) / eyeDist * 100;
+
+        return { pitch: pitch * 2, yaw: yaw * 2 };
+    }
+
+    function onResults(results) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw mirror-adjusted video stream background
+        ctx.save();
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+        ctx.restore();
+
+        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+            const landmarks = results.multiFaceLandmarks[0];
+
+            // Calculate metrics
+            const earL = getEAR(landmarks, L_EYE);
+            const earR = getEAR(landmarks, R_EYE);
+            const ear = (earL + earR) / 2;
+            const mar = getMAR(landmarks, MOUTH);
+            const { pitch, yaw } = estimateOrientation(landmarks);
+
+            // Update Telemetry Display
+            earVal.innerText = ear.toFixed(3);
+            marVal.innerText = mar.toFixed(3);
+            pitchVal.innerText = pitch.toFixed(1) + '°';
+            yawVal.innerText = yaw.toFixed(1) + '°';
+
+            // Evaluate Safety States & Classifications
+            const eyesClosed = ear < 0.21;
+            const yawning = mar > 0.55;
+            const nodding = pitch > 20.0 || pitch < -15.0;
+            const distracted = Math.abs(yaw) > 25.0;
+
+            if (eyesClosed || yawning || nodding) {
+                statusBanner.innerText = 'STATUS: DROWSY DETECTED';
+                statusBanner.className = 'drowsy';
+                container.style.borderColor = '#ff3333';
+                triggerAlertSound();
+            } else if (distracted) {
+                statusBanner.innerText = 'STATUS: DISTRACTED';
+                statusBanner.className = 'drowsy';
+                container.style.borderColor = '#ff9800';
+            } else {
+                statusBanner.innerText = 'STATUS: DRIVER ALERT';
+                statusBanner.className = '';
+                container.style.borderColor = '#4CAF50';
+            }
+
+            // Highlight key tracking anchors
+            const drawList = [1, 33, 263, 152];
+            ctx.fillStyle = '#ffffff';
+            drawList.forEach(idx => {
+                const lm = landmarks[idx];
+                const cx = (1 - lm.x) * canvas.width; // Mirror back coords
+                const cy = lm.y * canvas.height;
+                ctx.beginPath();
+                ctx.arc(cx, cy, 4, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+        }
+    }
+
+    const faceMesh = new FaceMesh({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    });
+
+    faceMesh.setOptions({
+        maxNumFaces: 1,
+        refineLandmarks: true,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+    });
+    faceMesh.onResults(onResults);
+
+    const camera = new Camera(video, {
+        onFrame: async () => {
+            await faceMesh.send({ image: video });
+        },
+        width: 640,
+        height: 480
+    });
+    camera.start();
+</script>
+</body>
+</html>

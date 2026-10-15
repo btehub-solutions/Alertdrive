@@ -1,0 +1,22 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# Local datasets and temporary directories
+temp_sourced_data/
+test_data/
+FairFace_extracted/
+*.zip
+
+# OS files
+.DS_Store
