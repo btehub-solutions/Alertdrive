@@ -93,7 +93,8 @@ export default function DemoPage() {
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const lastSoundTimeRef = useRef<number>(0);
+  const lastVoiceTimeRef = useRef<{ [key: string]: number }>({});
+  const activeAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const faceMeshRef = useRef<any>(null);
@@ -151,13 +152,8 @@ export default function DemoPage() {
     };
   }, []);
 
-  // Web Audio warning buzzer
-  const playAlertSound = useCallback(() => {
-    if (!audioEnabled) return;
-    const now = Date.now();
-    if (now - lastSoundTimeRef.current < 450) return;
-    lastSoundTimeRef.current = now;
-
+  // Web Audio warning buzzer fallback
+  const playBuzzer = useCallback(() => {
     try {
       if (!audioCtxRef.current) {
         const Ctx =
@@ -183,7 +179,42 @@ export default function DemoPage() {
     } catch {
       // Audio stream restricted
     }
-  }, [audioEnabled]);
+  }, []);
+
+  // Nigerian voice audio alert player
+  const playAlertSound = useCallback(
+    (alertType: "DROWSY" | "NODDING" | "DISTRACTED" | "YAWN" = "DROWSY") => {
+      if (!audioEnabled) return;
+      const now = Date.now();
+      const lastPlayed = lastVoiceTimeRef.current[alertType] || 0;
+      if (now - lastPlayed < 3800) return;
+      lastVoiceTimeRef.current[alertType] = now;
+
+      const audioMap: Record<string, string> = {
+        DROWSY: "/audio/drowsy.mp3",
+        NODDING: "/audio/head_drop.mp3",
+        DISTRACTED: "/audio/distracted.mp3",
+        YAWN: "/audio/yawn.mp3",
+      };
+
+      const src = audioMap[alertType];
+      if (src) {
+        try {
+          const audio = new Audio(src);
+          audio.volume = 1.0;
+          activeAudioRef.current = audio;
+          audio.play().catch(() => {
+            playBuzzer();
+          });
+        } catch {
+          playBuzzer();
+        }
+      } else {
+        playBuzzer();
+      }
+    },
+    [audioEnabled, playBuzzer]
+  );
 
   // Periodic cloud inference verification
   const sendCloudVerification = useCallback(async (video: HTMLVideoElement) => {
@@ -314,16 +345,19 @@ export default function DemoPage() {
         if (isDrowsy) {
           status = "DROWSY";
           statusLabel = "Drowsiness detected";
-          playAlertSound();
-        } else if (isYawn) {
-          status = "YAWN";
-          statusLabel = "Yawning detected";
-        } else if (isDistracted) {
-          status = "DISTRACTED";
-          statusLabel = "Attention diverted";
+          playAlertSound("DROWSY");
         } else if (isNodding) {
           status = "NODDING";
           statusLabel = "Head drop detected";
+          playAlertSound("NODDING");
+        } else if (isDistracted) {
+          status = "DISTRACTED";
+          statusLabel = "Attention diverted";
+          playAlertSound("DISTRACTED");
+        } else if (isYawn) {
+          status = "YAWN";
+          statusLabel = "Yawning detected";
+          playAlertSound("YAWN");
         }
 
         const conf = isDrowsy
@@ -524,7 +558,7 @@ export default function DemoPage() {
             fallbackPerclosRef.current = (closedCount / perclosBufferRef.current.length) * 100;
 
             const isDrowsy = fallbackPerclosRef.current >= 25.0;
-            if (isDrowsy) playAlertSound();
+            if (isDrowsy) playAlertSound("DROWSY");
 
             setTelemetry((prev) => {
               // Only apply if MediaPipe hasn't updated recently
