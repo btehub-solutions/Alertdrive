@@ -1,0 +1,28 @@
+name: Keep Render Service Alive
+
+on:
+  schedule:
+    # Trigger every 14 minutes to prevent Render 15-minute idle spin-down
+    - cron: "*/14 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: keep-alive
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    name: Ping Health Endpoint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Ping AlertDrive Render API
+        run: |
+          echo "Pinging AlertDrive API health endpoint..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 45 "https://alertdrive-v05y.onrender.com/health")
+          echo "HTTP response code: ${HTTP_STATUS}"
+          if [ "${HTTP_STATUS}" -ne 200 ]; then
+            echo "Health endpoint returned ${HTTP_STATUS}, trying root endpoint..."
+            curl -s -S -f --max-time 45 "https://alertdrive-v05y.onrender.com/"
+          fi
