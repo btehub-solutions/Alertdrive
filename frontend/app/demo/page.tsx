@@ -181,14 +181,32 @@ export default function DemoPage() {
     }
   }, []);
 
-  // Nigerian voice audio alert player
+  // Nigerian voice audio alert player with global audio lock
   const playAlertSound = useCallback(
     (alertType: "DROWSY" | "NODDING" | "DISTRACTED" | "YAWN" = "DROWSY") => {
       if (!audioEnabled) return;
       const now = Date.now();
+
+      // Global throttle: ensure at least 2500ms between any voice alert
+      const lastGlobal = lastVoiceTimeRef.current["__GLOBAL__"] || 0;
+      if (now - lastGlobal < 2500) return;
+
+      // Type-specific throttle: at least 4000ms before repeating the exact same alert
       const lastPlayed = lastVoiceTimeRef.current[alertType] || 0;
-      if (now - lastPlayed < 3800) return;
+      if (now - lastPlayed < 4000) return;
+
+      lastVoiceTimeRef.current["__GLOBAL__"] = now;
       lastVoiceTimeRef.current[alertType] = now;
+
+      // Immediately silence any previous voice so clips never overlap
+      if (activeAudioRef.current) {
+        try {
+          activeAudioRef.current.pause();
+          activeAudioRef.current.currentTime = 0;
+        } catch {
+          // Ignore
+        }
+      }
 
       const audioMap: Record<string, string> = {
         DROWSY: "/audio/drowsy.mp3",
