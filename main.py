@@ -40,11 +40,11 @@ REPO_ID = "btehubsolutions/alertdrive-model"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 local_model_path = os.path.join(BASE_DIR, MODEL_FILENAME)
 
-if os.path.exists(local_model_path):
+if os.path.exists(local_model_path) and os.path.getsize(local_model_path) > 1000000:
     print(f"Loading local TFLite model from: {local_model_path}")
     tflite_path = local_model_path
 else:
-    print(f"Local model not found. Downloading from Hugging Face ({REPO_ID})...")
+    print(f"Local model not found or is LFS pointer. Downloading from Hugging Face ({REPO_ID})...")
     from huggingface_hub import hf_hub_download
     tflite_path = hf_hub_download(repo_id=REPO_ID, filename=MODEL_FILENAME)
 
