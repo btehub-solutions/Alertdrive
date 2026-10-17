@@ -64,14 +64,17 @@ function computeMAR(landmarks: Landmark[], indices: number[]): number {
 
 function estimateOrientation(landmarks: Landmark[]) {
   const nose = landmarks[1];
-  const chin = landmarks[152];
   const leftEye = landmarks[33];
   const rightEye = landmarks[263];
 
   const eyeDist = calculateDistance(leftEye, rightEye);
   if (eyeDist === 0) return { pitch: 0, yaw: 0 };
-  const pitch = ((nose.y - (leftEye.y + rightEye.y) / 2) / eyeDist) * 100 * 2;
-  const yaw = ((nose.x - (leftEye.x + rightEye.x) / 2) / eyeDist) * 100 * 2;
+
+  // Baseline neutral ratio: in upright frontal faces, the vertical distance from eye level 
+  // to nose tip is approximately 0.35 of the outer eye-to-eye distance.
+  const verticalRatio = (nose.y - (leftEye.y + rightEye.y) / 2) / eyeDist;
+  const pitch = (verticalRatio - 0.35) * 100;
+  const yaw = ((nose.x - (leftEye.x + rightEye.x) / 2) / eyeDist) * 100;
   return { pitch, yaw };
 }
 
@@ -101,6 +104,7 @@ export default function DemoPage() {
   // Rolling buffer for PERCLOS (60 frames at 30 fps = 2.0s time window)
   const perclosBufferRef = useRef<number[]>([]);
   const consecutiveClosedRef = useRef<number>(0);
+  const consecutiveNodRef = useRef<number>(0);
 
   // Optical fallback tracker state
   const prevFrameLumaRef = useRef<Float32Array | null>(null);
@@ -111,7 +115,7 @@ export default function DemoPage() {
   // Frame rate monitor
   const fpsTrackerRef = useRef<{ count: number; lastTime: number; currentFps: number }>({
     count: 0,
-    lastTime: performance.now(),
+    lastTime: 0,
     currentFps: 30,
   });
 
@@ -293,10 +297,16 @@ export default function DemoPage() {
         const perclos = (closedCount / perclosBufferRef.current.length) * 100;
 
         // 3. State Evaluation
+        if (pitch > 22.0) {
+          consecutiveNodRef.current += 1;
+        } else {
+          consecutiveNodRef.current = 0;
+        }
+
         const isDrowsy = perclos >= 25.0 || consecutiveClosedRef.current >= 24;
         const isYawn = mar > 0.55;
-        const isDistracted = Math.abs(yaw) > 25.0;
-        const isNodding = pitch > 20.0 || pitch < -15.0;
+        const isDistracted = Math.abs(yaw) > 25.0 || pitch < -25.0;
+        const isNodding = consecutiveNodRef.current >= 4;
 
         let status: TelemetryState["status"] = "NOMINAL";
         let statusLabel = "Attentive";
@@ -450,6 +460,9 @@ export default function DemoPage() {
 
         // Calculate active FPS
         const now = performance.now();
+        if (fpsTrackerRef.current.lastTime === 0) {
+          fpsTrackerRef.current.lastTime = now;
+        }
         fpsTrackerRef.current.count += 1;
         if (now - fpsTrackerRef.current.lastTime >= 1000) {
           fpsTrackerRef.current.currentFps = fpsTrackerRef.current.count;

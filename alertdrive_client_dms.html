@@ -204,10 +204,12 @@
         const rightEye = landmarks[263];
 
         const eyeDist = calculateDistance(leftEye, rightEye);
-        const pitch = (nose.y - (leftEye.y + rightEye.y)/2) / eyeDist * 100;
+        if (eyeDist === 0) return { pitch: 0, yaw: 0 };
+        const verticalRatio = (nose.y - (leftEye.y + rightEye.y)/2) / eyeDist;
+        const pitch = (verticalRatio - 0.35) * 100;
         const yaw = (nose.x - (leftEye.x + rightEye.x)/2) / eyeDist * 100;
 
-        return { pitch: pitch * 2, yaw: yaw * 2 };
+        return { pitch: pitch, yaw: yaw };
     }
 
     function onResults(results) {
@@ -239,8 +241,8 @@
             // Evaluate Safety States & Classifications
             const eyesClosed = ear < 0.21;
             const yawning = mar > 0.55;
-            const nodding = pitch > 20.0 || pitch < -15.0;
-            const distracted = Math.abs(yaw) > 25.0;
+            const nodding = pitch > 22.0;
+            const distracted = Math.abs(yaw) > 25.0 || pitch < -25.0;
 
             if (eyesClosed || yawning || nodding) {
                 statusBanner.innerText = 'STATUS: DROWSY DETECTED';
